@@ -297,10 +297,12 @@ function DownloadCniBinaries($NetworkMode, $CniPath)
     if ($Global:Cri -eq "containerd")
     {
         # TODO: Add URL parameters for both runtimes
+        DownloadFile  $Global:ClusterConfiguration.Cni.DownloadUrls.WindowsContainerNetworking -Destination "$env:TEMP\windows-container-networking-cni-amd64.zip"
+        Expand-Archive -Path "$env:TEMP\windows-container-networking-cni-amd64.zip" -DestinationPath $CniPath -Force
         throw "Not implemented yet"
     } else {
-        DownloadFile -Url https://github.com/containernetworking/plugins/releases/download/v0.8.2/cni-plugins-windows-amd64-v0.8.2.tgz -Destination $Global:BaseDir/cni-plugins-windows-amd64-v0.8.2.tgz
-        & cmd /c tar -zxvf $Global:BaseDir/cni-plugins-windows-amd64-v0.8.2.tgz -C $CniPath '2>&1'
+        DownloadFile -Url $Global:ClusterConfiguration.Cni.DownloadUrls.ContainerNetworkingPlugins -Destination $Global:BaseDir/cni-plugins-windows-amd64.tgz
+        & cmd /c tar -zxvf $Global:BaseDir/cni-plugins-windows-amd64.tgz -C $CniPath '2>&1'
         if (!$?) { Write-Warning "Error decompressing file, exiting."; exit; }
     }
 }
@@ -533,11 +535,12 @@ function Update-CNIConfig
     {
         "dockerd" {
             Update-CNIConfigDocker $PSBoundParameters
+            break
         }
 
         "containerd" {
             Update-CNIConfigContainerd $PSBoundParameters
-            throw "$_ not implemented"
+            break
         }
 
         default {
@@ -913,8 +916,8 @@ function InstallKubelet()
     $kubeletBinPath = $((get-command kubelet.exe -ErrorAction Stop).Source)
 
     $depends = switch ($Global:Cri) {
-        "dockerd" { "docker" }
-        "containerd" { "containerd" }
+        "dockerd" { "docker"; break}
+        "containerd" { "containerd"; break }
         default { throw "$_ not implemented"}
     }
 
@@ -1274,6 +1277,7 @@ function InstallPauseImage()
                     throw "Failed to pull $Global:PauseImage"
                 }
             }
+            break
         }
 
         "containerd" {
@@ -1291,12 +1295,8 @@ function InstallContainerD()
     $CrictlVersion = "v1.14.0",
     $RunhcsVersion = "v0.8.6",
     $DestinationPath = "containerd",
-    $linuxSandboxImage = "k8s.gcr.io/pause:3.1",
-    [Parameter(Mandatory=$true)] $downloadUrls
+    $linuxSandboxImage = "k8s.gcr.io/pause:3.1"
     )
-
-
-    throw Not finished yet
 
     md $Global:BaseDir\$DestinationPath -ErrorAction SilentlyContinue
     # Add path to this PowerShell session immediately
@@ -1308,13 +1308,13 @@ function InstallContainerD()
     $cmd = get-command containerd.exe -ErrorAction SilentlyContinue
     if (!$cmd)
     {
-        DownloadFile $downloadUrls.ContainerD -Destination "$Global:BaseDir\$DestinationPath\containerd.exe"
+        DownloadFile $Global:ClusterConfiguration.Cri.DownloadUrls.ContainerD -Destination "$Global:BaseDir\$DestinationPath\containerd.exe"
     }
 
     $cmd = get-command ctr.exe -ErrorAction SilentlyContinue
     if (!$cmd)
     {
-        DownloadFile $downloadUrls.Ctr -Destination "$Global:BaseDir\$DestinationPath\ctr.exe"
+        DownloadFile $Global:ClusterConfiguration.Cri.DownloadUrls.Ctr -Destination "$Global:BaseDir\$DestinationPath\ctr.exe"
     }
 
     $cmd = get-command crictl.exe -ErrorAction SilentlyContinue
@@ -1354,7 +1354,7 @@ debug: false
     $cmd = get-command containerd-shim-runhcs-v1.exe -ErrorAction SilentlyContinue
     if (!$cmd)
     {
-        DownloadFile $downloadUrls.ContainerdShim -Destination "$Global:BaseDir\$DestinationPath\containerd-shim-runhcs-v1.exe"
+        DownloadFile $Global:ClusterConfiguration.Cri.DownloadUrls.ContainerdShim -Destination "$Global:BaseDir\$DestinationPath\containerd-shim-runhcs-v1.exe"
     }
 
     # TODO: containerd - remove unneeded code
@@ -1561,10 +1561,6 @@ function InstallCNI($cni, $NetworkMode, $ManagementIp, $CniPath, $InterfaceName)
    
     switch ($Cni)
     {
-        "kubenet" {
-            break
-        }
-    
         "flannel" {
             InstallFlannelD -Destination $Global:BaseDir -InterfaceIpAddress $ManagementIp
             Update-CNIConfig  `
@@ -1577,8 +1573,11 @@ function InstallCNI($cni, $NetworkMode, $ManagementIp, $CniPath, $InterfaceName)
                 -NetworkName $Global:NetworkName -NetworkMode $Global:NetworkMode
 
             Copy-Item $(GetFlannelNetConf) $(GetKubeFlannelPath)
-
             break
+        }
+
+        default {
+            throw "InstallCni not implemented for $_"
         }
     } 
 }
@@ -1587,12 +1586,13 @@ function UninstallCNI($cni)
 {
     switch ($Cni)
     {
-        "kubenet" {
-            break
-        }
         "flannel" {
             UnInstallFlannelD
             break
+        }
+
+        default {
+            throw "InstallCni not implemented for $_"
         }
     } 
 }

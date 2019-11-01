@@ -114,6 +114,15 @@ function ReadKubeclusterConfig($ConfigFile)
         }
     }
 
+    if (!$Global:ClusterConfiguration.Cni.DownloadUrls)
+    {
+        $Global:ClusterConfiguration.Cni | Add-Member -MemberType NoteProperty -Name DownloadUrls -Value @{
+            ContainerNetworkingPlugins = "https://github.com/containernetworking/plugins/releases/download/v0.8.2/cni-plugins-windows-amd64-v0.8.2.tgz";
+            WindowsContainerNetworking = "https://github.com/microsoft/windows-container-networking/releases/download/v0.2.0/windows-container-networking-cni-amd64-v0.2.0.zip";
+            # Flannel has a release parameter already
+        }
+    }
+
     if ($Global:ClusterConfiguration.Cni.Plugin.Name -eq "vxlan")
     {
         if (!$Global:ClusterConfiguration.Kubernetes.KubeProxy)
