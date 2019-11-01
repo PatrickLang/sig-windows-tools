@@ -1301,6 +1301,8 @@ function InstallContainerD()
     md $Global:BaseDir\$DestinationPath -ErrorAction SilentlyContinue
     # Add path to this PowerShell session immediately
     $env:path += ";$Global:BaseDir\$DestinationPath"
+    $containerdBinpath = "$Global:BaseDir\$DestinationPath\containerd.exe"
+    
     # For persistent use after a reboot
     $existingMachinePath = [Environment]::GetEnvironmentVariable("Path",[System.EnvironmentVariableTarget]::Machine)
     [Environment]::SetEnvironmentVariable("Path", $existingMachinePath + ";$Global:BaseDir\$DestinationPath", [EnvironmentVariableTarget]::Machine)
@@ -1363,31 +1365,30 @@ debug: false
     # {
     #     DownloadFile https://github.com/microsoft/hcsshim/releases/download/v0.8.6/runhcs.exe -Destination "$Global:BaseDir\$DestinationPath\runhcs.exe"
     # }
-    # $ContainerdPath = "containerd"
-    # Assert-FileExists (Join-Path $Global:BaseDir\$ContainerdPath containerd.exe)
+    
+    $ContainerdPath = "containerd"
+    Assert-FileExists (Join-Path $Global:BaseDir\$ContainerdPath containerd.exe)
 
-    # Write-Host "Installing containerd as a service"
+    Write-Host "Installing containerd as a service"
 
-    # $logDir = [io.Path]::Combine($(GetLogDir), "containerd");
-    # CreateDirectory $logDir
-    # $log = [io.Path]::Combine($logDir, "containerdsvc.log");
+    $logDir = [io.Path]::Combine($(GetLogDir), "containerd");
+    CreateDirectory $logDir
+    $log = [io.Path]::Combine($logDir, "containerdsvc.log");
 
-    # $cdbinary = Join-Path $Global:BaseDir\$containerdPath containerd.exe
-    # $svc = Get-Service -Name containerd -ErrorAction SilentlyContinue
+    $containerdArgs = @(
+        "-config $Global:BaseDir\$ContainerdPath\config.toml",
+        "--run-service"
+        # TODO - need any logs?
+    )
 
-    # $containerdArgs = @(
-    #     "$cdbinary",
-    #     "-config $Global:BaseDir\$ContainerdPath\config.toml"
-    # )
-
-    # $service = Get-Service ContainerD -ErrorAction SilentlyContinue
-    # # TODO - containerd - move away from service wrapper
-    # if (!$service)
-    # {
-    #     $nodeName = (hostname).ToLower()
-    #     CreateService -ServiceName ContainerD -CommandLine $containerdArgs `
-    #         -LogFile "$log"    
-    # }
+    $serviceName = "containerd"
+    $service = Get-Service $serviceName -ErrorAction SilentlyContinue
+    if (!$service)
+    {
+        New-Service -name ContainerD -binaryPathName "$containerdBinpath $containerdArgs" `
+            -displayName $serviceName -startupType Automatic    `
+            -Description "$serviceName Service"
+    }
 }
 
 function IsContainerDUp()
@@ -1400,7 +1401,7 @@ function UninstallContainerD()
 function InstallContainerdImages()
 {
     # TODO
-    throw "Not implemented yet"
+    Write-Warning "Warning - Image pre-pulling is not implemented yet"
     # if (!(docker images $Global:NanoserverImage -q))
     # {
     #     docker pull $Global:NanoserverImage
