@@ -135,6 +135,18 @@ function ReadKubeclusterConfig($ConfigFile)
             }
         }
     }
+
+    if ($Global:ClusterConfiguration.Cri.Name -eq "containerd")
+    {
+        if (!$Global:ClusterConfiguration.Cri.DownloadUrls) {
+            $Global:ClusterConfiguration.Cri | Add-Member -MemberType NoteProperty -Name DownloadUrls -Value @{
+                ContainerD = "https://github.com/nagiesek/cri/releases/download/windows/containerd.exe";
+                Ctr = "https://github.com/nagiesek/cri/releases/download/windows/ctr.exe";
+                ContainerdShim = "https://github.com/nagiesek/cri/releases/download/windows/containerd-shim-runhcs-v1.exe";
+                # TODO RunHcs - not needed?
+            }
+        }
+    }
 }
 
 ###############################################################################################

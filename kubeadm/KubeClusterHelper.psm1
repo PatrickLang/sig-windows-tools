@@ -148,9 +148,11 @@ function ValidateConfig()
         throw "$Global:NetworkPlugin is not yet supported"
     }
 
-    if ($Global:Cri -ne "dockerd")
+    switch ($Global:Cri)
     {
-        throw "$Global:Cri is not yet supported"
+        "dockerd" { break }
+        "containerd" { Write-Warning "Warning: containerd is currently experimental" ; break}
+        default { throw "$_ is not yet supported" }
     }
 }
 
@@ -292,9 +294,15 @@ function DownloadCniBinaries($NetworkMode, $CniPath)
     CreateDirectory $CniPath
     CreateDirectory $CniPath\config
     DownloadFlannelBinaries -Destination $Global:BaseDir
-    DownloadFile -Url https://github.com/containernetworking/plugins/releases/download/v0.8.2/cni-plugins-windows-amd64-v0.8.2.tgz -Destination $Global:BaseDir/cni-plugins-windows-amd64-v0.8.2.tgz
-    & cmd /c tar -zxvf $Global:BaseDir/cni-plugins-windows-amd64-v0.8.2.tgz -C $CniPath '2>&1'
-    if (!$?) { Write-Warning "Error decompressing file, exiting."; exit; }
+    if ($Global:Cri -eq "containerd")
+    {
+        # TODO: Add URL parameters for both runtimes
+        throw "Not implemented yet"
+    } else {
+        DownloadFile -Url https://github.com/containernetworking/plugins/releases/download/v0.8.2/cni-plugins-windows-amd64-v0.8.2.tgz -Destination $Global:BaseDir/cni-plugins-windows-amd64-v0.8.2.tgz
+        & cmd /c tar -zxvf $Global:BaseDir/cni-plugins-windows-amd64-v0.8.2.tgz -C $CniPath '2>&1'
+        if (!$?) { Write-Warning "Error decompressing file, exiting."; exit; }
+    }
 }
 
 function DownloadFlannelBinaries()
@@ -508,8 +516,9 @@ function Update-NetConfig
     Add-Content -Path $NetConfig -Value $outJson
     Write-Host "Generated net-conf Config [$outJson]"
 }
-function
-Update-CNIConfig
+
+
+function Update-CNIConfig
 {
     Param(
         $clusterCIDR,
@@ -517,6 +526,34 @@ Update-CNIConfig
         $serviceCIDR,
         $InterfaceName,
         $NetworkName,
+        [ValidateSet("l2bridge", "overlay",IgnoreCase = $true)] [parameter(Mandatory = $true)] $NetworkMode
+    )
+
+    switch ($Global:Cri)
+    {
+        "dockerd" {
+            Update-CNIConfigDocker $PSBoundParameters
+        }
+
+        "containerd" {
+            Update-CNIConfigContainerd $PSBoundParameters
+            throw "$_ not implemented"
+        }
+
+        default {
+            throw "$_ not implemented"
+        }
+    }
+}
+
+function Update-CNIConfigDocker
+{
+    Param(
+        [parameter(Mandatory = $true)] $clusterCIDR,
+        [parameter(Mandatory = $true)] $KubeDnsServiceIP,
+        [parameter(Mandatory = $true)] $serviceCIDR,
+        [parameter(Mandatory = $true)] $InterfaceName,
+        [parameter(Mandatory = $true)] $NetworkName,
         [ValidateSet("l2bridge", "overlay",IgnoreCase = $true)] [parameter(Mandatory = $true)] $NetworkMode
     )
     if ($NetworkMode -eq "l2bridge")
@@ -599,6 +636,100 @@ Update-CNIConfig
     Add-Content -Path $CNIConfig -Value $outJson
 }
 
+function Update-CNIConfigContainerd
+{
+    Param(
+        [parameter(Mandatory = $true)] $clusterCIDR,
+        [parameter(Mandatory = $true)] $KubeDnsServiceIP,
+        [parameter(Mandatory = $true)] $serviceCIDR,
+        [parameter(Mandatory = $true)] $InterfaceName,
+        [parameter(Mandatory = $true)] $NetworkName,
+        [ValidateSet("l2bridge", "overlay",IgnoreCase = $true)] [parameter(Mandatory = $true)] $NetworkMode
+    )
+    if ($NetworkMode -eq "l2bridge")
+    {
+        $jsonSampleConfig = '{
+            "cniVersion": "0.2.0",
+            "name": "<NetworkMode>",
+            "type": "flannel",
+            "capabilities": {
+                "portMappings": true,
+                "dns" : true
+            },
+            "delegate": {
+               "type": "sdnbridge",
+                "AdditionalArgs" : [
+                  {
+                    "Name" : "EndpointPolicy", "Value" : { "Type" : "OutBoundNAT", "Settings" : { "Exceptions": [ "<ClusterCIDR>", "<ServerCIDR>", "<MgmtSubnet>" ] } }
+                  },
+                  {
+                    "Name" : "EndpointPolicy", "Value" : { "Type" : "SDNROUTE", "Settings" : { "DestinationPrefix": "<ServerCIDR>", "NeedEncap" : true } }
+                  },
+                  {
+                    "Name" : "EndpointPolicy", "Value" : { "Type" : "SDNROUTE", "Settings" : {  "DestinationPrefix": "<MgmtIP>/32", "NeedEncap" : true } }
+                  }
+                ]
+              }
+          }'
+
+        $configJson =  ConvertFrom-Json $jsonSampleConfig
+        $configJson.name = $NetworkName
+        $configJson.delegate.type = "sdnbridge"
+
+        $configJson.delegate.AdditionalArgs[0].Value.Settings.Exceptions[0] = $clusterCIDR
+        $configJson.delegate.AdditionalArgs[0].Value.Settings.Exceptions[1] = $serviceCIDR
+        $configJson.delegate.AdditionalArgs[0].Value.Settings.Exceptions[2] = $Global:ManagementSubnet
+    
+        $configJson.delegate.AdditionalArgs[1].Value.Settings.DestinationPrefix  = $serviceCIDR
+        $configJson.delegate.AdditionalArgs[2].Value.Settings.DestinationPrefix  = ($Global:ManagementIp + "/32")
+    }
+    elseif ($NetworkMode -eq "overlay")
+    {
+        $jsonSampleConfig = '{
+            "cniVersion": "0.2.0",
+            "name": "<NetworkMode>",
+            "type": "flannel",
+            "capabilities": {
+                "portMappings": true,
+                "dns" : true
+            },
+            "delegate": {
+               "type": "sdnoverlay",
+                "AdditionalArgs" : [
+                  {
+                    "Name" : "EndpointPolicy", "Value" : { "Type" : "OutBoundNAT", "Settings" : { "Exceptions": [ "<ClusterCIDR>", "<ServerCIDR>" ] } }
+                  },
+                  {
+                    "Name" : "EndpointPolicy", "Value" : { "Type" : "SDNROUTE", "Settings" : { "DestinationPrefix": "<ServerCIDR>", "NeedEncap" : true } }
+                  }
+                ]
+              }
+          }'
+    
+        $configJson =  ConvertFrom-Json $jsonSampleConfig
+        $configJson.name = $NetworkName
+        $configJson.type = "flannel"
+        $configJson.delegate.type = "sdnoverlay"
+        
+        #TODO containerd - schema still wrong here for overlay
+        $configJson.delegate.Policies[0].Value.Exceptions[0] = $clusterCIDR
+        $configJson.delegate.Policies[0].Value.Exceptions[1] = $serviceCIDR
+    
+        $configJson.delegate.Policies[1].Value.DestinationPrefix  = $serviceCIDR
+    }
+    
+    $CNIConfig = [io.Path]::Combine($(GetCniConfigPath), "cni.conf")
+    if (Test-Path $CNIConfig) {
+        Clear-Content -Path $CNIConfig
+    }
+
+    $outJson = (ConvertTo-Json $configJson -Depth 20)
+    Write-Host "Generated CNI Config [$outJson]"
+
+    Add-Content -Path $CNIConfig -Value $outJson
+}
+
+
 function CleanupContainers()
 {
     docker ps -aq | foreach {docker rm $_ -f} 
@@ -651,6 +782,8 @@ function GetKubeletArguments()
         [parameter(Mandatory=$true)] [string] $NodeIp,
         [parameter(Mandatory = $false)] $KubeletFeatureGates = ""
     )
+
+    # TODO: containerd - windows 1903+ - parameterize pod-infra-container-image and default to premade image on MCR
     $kubeletArgs = @(
         (get-command kubelet.exe -ErrorAction Stop).Source,
         "--windows-service"
@@ -681,6 +814,11 @@ function GetKubeletArguments()
     if ($KubeletFeatureGates -ne "")
     {
         $kubeletArgs += "--feature-gates=$KubeletFeatureGates"
+    }
+
+    if ($Global:Cri -eq "containerd")
+    {
+        $kubeletArgs += @("--container-runtime=remote", "--container-runtime-endpoint=npipe:////./pipe/containerd-containerd")
     }
 
     return $kubeletArgs
@@ -774,8 +912,14 @@ function InstallKubelet()
 
     $kubeletBinPath = $((get-command kubelet.exe -ErrorAction Stop).Source)
 
+    $depends = switch ($Global:Cri) {
+        "dockerd" { "docker" }
+        "containerd" { "containerd" }
+        default { throw "$_ not implemented"}
+    }
+
     New-Service -Name "kubelet" -StartupType Automatic `
-        -DependsOn "docker" `
+        -DependsOn $depends `
         -BinaryPathName "$kubeletBinPath --windows-service --v=6 --log-dir=$logDir --cert-dir=$env:SYSTEMDRIVE\var\lib\kubelet\pki --cni-bin-dir=$CniDir --cni-conf-dir=$CniConf --bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf --kubeconfig=/etc/kubernetes/kubelet.conf --hostname-override=$(hostname) --pod-infra-container-image=$Global:PauseImage --enable-debugging-handlers  --cgroups-per-qos=false --enforce-node-allocatable=`"`" --logtostderr=false --network-plugin=cni --resolv-conf=`"`" --cluster-dns=`"$KubeDnsServiceIp`" --cluster-domain=cluster.local --feature-gates=$KubeletFeatureGates"
 
     # Investigate why the below doesn't work, probably a syntax error with the args
@@ -1118,15 +1262,161 @@ function InstallDockerImages()
 function InstallPauseImage()
 {
     # Prepare POD infra Images
-    $infraPodImage=docker images $Global:PauseImage -q
-    if (!$infraPodImage)
+    switch ($Global:Cri)
     {
-        Write-Host "No infrastructure container image found. Pulling $Global:PauseImage"
-        docker pull $Global:PauseImage
-        if ($LastExitCode) {
-            throw "Failed to pull $Global:PauseImage"
+        "dockerd" {
+            $infraPodImage=docker images $Global:PauseImage -q
+            if (!$infraPodImage)
+            {
+                Write-Host "No infrastructure container image found. Pulling $Global:PauseImage"
+                docker pull $Global:PauseImage
+                if ($LastExitCode) {
+                    throw "Failed to pull $Global:PauseImage"
+                }
+            }
         }
+
+        "containerd" {
+            # TODO
+            throw "Not implemented yet"
+        }
+
+        default { throw "$_ not supported"}
     }
+}
+
+function InstallContainerD()
+{
+    Param(
+    $CrictlVersion = "v1.14.0",
+    $RunhcsVersion = "v0.8.6",
+    $DestinationPath = "containerd",
+    $linuxSandboxImage = "k8s.gcr.io/pause:3.1",
+    [Parameter(Mandatory=$true)] $downloadUrls
+    )
+
+
+    throw Not finished yet
+
+    md $Global:BaseDir\$DestinationPath -ErrorAction SilentlyContinue
+    # Add path to this PowerShell session immediately
+    $env:path += ";$Global:BaseDir\$DestinationPath"
+    # For persistent use after a reboot
+    $existingMachinePath = [Environment]::GetEnvironmentVariable("Path",[System.EnvironmentVariableTarget]::Machine)
+    [Environment]::SetEnvironmentVariable("Path", $existingMachinePath + ";$Global:BaseDir\$DestinationPath", [EnvironmentVariableTarget]::Machine)
+
+    $cmd = get-command containerd.exe -ErrorAction SilentlyContinue
+    if (!$cmd)
+    {
+        DownloadFile $downloadUrls.ContainerD -Destination "$Global:BaseDir\$DestinationPath\containerd.exe"
+    }
+
+    $cmd = get-command ctr.exe -ErrorAction SilentlyContinue
+    if (!$cmd)
+    {
+        DownloadFile $downloadUrls.Ctr -Destination "$Global:BaseDir\$DestinationPath\ctr.exe"
+    }
+
+    $cmd = get-command crictl.exe -ErrorAction SilentlyContinue
+    if (!$cmd)
+    {
+        DownloadAndExtractTarGz https://github.com/kubernetes-sigs/cri-tools/releases/download/$CrictlVersion/crictl-$CrictlVersion-windows-amd64.tar.gz $Global:BaseDir\$DestinationPath
+        #TODO - containerd - move to generating template with containerd.exe config default instead of downloading it.
+        #TODO - containerd - also align with runtimeHandlers used in test passes
+        DownloadFile "https://github.com/nagiesek/cri/releases/download/windows/config.toml"  -Destination "$Global:BaseDir\$DestinationPath\config.toml"
+        (Get-Content -Path "$Global:BaseDir\$DestinationPath\config.toml" -Raw).
+            Replace('<INSTALLDIR>', $Global:BaseDir.Replace('\', '\\')).
+            Replace('<CNIDIR>', $(GetCniPath).Replace('\', '\\')).
+            Replace('<WINDOWSSANDBOXIMAGE>', $Global:NanoserverImage).
+            Replace('<LINUXSANDBOXIMAGE>', $linuxSandboxImage) |
+            Out-File -FilePath "$Global:BaseDir\$DestinationPath\config.toml" -Encoding ascii
+        $Global:Configuration += @{
+            InstallContainerd = $true;
+        }
+        # set crictl to access the configured container endpoint by default
+        $crictlConfigDir = Join-Path  $env:USERPROFILE ".crictl"
+        $crictlConfigPath = Join-Path $crictlConfigDir "crictl.yaml"
+
+        if(Test-Path $crictlConfigPath) {
+            return;
+        }
+
+        Write-Output "Updating crictl config"
+        New-Item -ItemType Directory -Path $crictlConfigDir -Force > $null
+@"
+runtime-endpoint: npipe:\\\\.\pipe\containerd-containerd
+image-endpoint: npipe:\\\\.\pipe\containerd-containerd
+timeout: 0
+debug: false
+"@ | Out-File $crictlConfigPath
+    }
+
+    $cmd = get-command containerd-shim-runhcs-v1.exe -ErrorAction SilentlyContinue
+    if (!$cmd)
+    {
+        DownloadFile $downloadUrls.ContainerdShim -Destination "$Global:BaseDir\$DestinationPath\containerd-shim-runhcs-v1.exe"
+    }
+
+    # TODO: containerd - remove unneeded code
+    # $cmd = get-command runhcs.exe -ErrorAction SilentlyContinue
+    # if (!$cmd)
+    # {
+    #     DownloadFile https://github.com/microsoft/hcsshim/releases/download/v0.8.6/runhcs.exe -Destination "$Global:BaseDir\$DestinationPath\runhcs.exe"
+    # }
+    # $ContainerdPath = "containerd"
+    # Assert-FileExists (Join-Path $Global:BaseDir\$ContainerdPath containerd.exe)
+
+    # Write-Host "Installing containerd as a service"
+
+    # $logDir = [io.Path]::Combine($(GetLogDir), "containerd");
+    # CreateDirectory $logDir
+    # $log = [io.Path]::Combine($logDir, "containerdsvc.log");
+
+    # $cdbinary = Join-Path $Global:BaseDir\$containerdPath containerd.exe
+    # $svc = Get-Service -Name containerd -ErrorAction SilentlyContinue
+
+    # $containerdArgs = @(
+    #     "$cdbinary",
+    #     "-config $Global:BaseDir\$ContainerdPath\config.toml"
+    # )
+
+    # $service = Get-Service ContainerD -ErrorAction SilentlyContinue
+    # # TODO - containerd - move away from service wrapper
+    # if (!$service)
+    # {
+    #     $nodeName = (hostname).ToLower()
+    #     CreateService -ServiceName ContainerD -CommandLine $containerdArgs `
+    #         -LogFile "$log"    
+    # }
+}
+
+function IsContainerDUp()
+{
+    return get-childitem \\.\pipe\ | ?{ $_.name -eq "containerd-containerd" }
+}
+
+function UninstallContainerD()
+
+function InstallContainerdImages()
+{
+    # TODO
+    throw "Not implemented yet"
+    # if (!(docker images $Global:NanoserverImage -q))
+    # {
+    #     docker pull $Global:NanoserverImage
+    #     if (!(docker images $Global:NanoserverImage -q)) {
+    #         throw "Failed to pull $Global:NanoserverImage"
+    #     }
+    # }
+    # docker tag $Global:NanoserverImage mcr.microsoft.com/windows/nanoserver:latest
+    # if (!(docker images $Global:ServercoreImage -q))
+    # {
+    #     docker pull $Global:ServercoreImage
+    #     if (!(docker images $Global:ServercoreImage -q)) {
+    #         throw "Failed to pull $Global:ServercoreImage"
+    #     }
+    # }
+    # docker tag $Global:ServercoreImage mcr.microsoft.com/windows/servercore:latest
 }
 
 function InstallKubernetesBinaries()
@@ -1249,17 +1539,21 @@ function InstallCRI($cri)
             # Setup Docker
             InstallDockerD
             InstallDockerImages
-            InstallPauseImage
             break
         }
 
         "containerd" {
             # Setup ContainerD
-            throw "Not Implemented"
-            # InstallContainerD
+            InstallContainerD
+            InstallContainerdImages
             break
         }
+
+        default {
+            throw "$_ not supported"
+        }
     }
+    InstallPauseImage
 }
 
 function InstallCNI($cni, $NetworkMode, $ManagementIp, $CniPath, $InterfaceName)
@@ -1373,3 +1667,6 @@ Export-ModuleMember CleanupPolicyList
 Export-ModuleMember CreateExternalNetwork
 Export-ModuleMember RemoveExternalNetwork
 Export-ModuleMember DownloadCniBinaries
+Export-ModuleMember InstallContainerD
+Export-ModuleMember UninstallContainerD
+Export-ModuleMember InstallContainerdImages
