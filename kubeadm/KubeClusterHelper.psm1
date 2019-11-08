@@ -1397,6 +1397,9 @@ function IsContainerDUp()
 }
 
 function UninstallContainerD()
+{
+    throw "TODO: Not implemented"
+}
 
 function InstallContainerdImages()
 {
