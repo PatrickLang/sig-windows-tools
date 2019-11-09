@@ -152,6 +152,7 @@ function ReadKubeclusterConfig($ConfigFile)
                 ContainerD = "https://github.com/nagiesek/cri/releases/download/windows/containerd.exe";
                 Ctr = "https://github.com/nagiesek/cri/releases/download/windows/ctr.exe";
                 ContainerdShim = "https://github.com/nagiesek/cri/releases/download/windows/containerd-shim-runhcs-v1.exe";
+                # TODO CrictlUrl = "";
                 # TODO RunHcs - not needed?
             }
         }

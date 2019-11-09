@@ -45,6 +45,12 @@ function GetUserDir()
     }
 }
 
+function Assert-FileExists($file) {
+    if(-not (Test-Path $file)) {
+        throw "$file is missing."
+    }
+}
+
 function GetCniPath()
 {
     return [io.Path]::Combine($Global:BaseDir, "cni");
@@ -1322,7 +1328,8 @@ function InstallContainerD()
     $cmd = get-command crictl.exe -ErrorAction SilentlyContinue
     if (!$cmd)
     {
-        DownloadAndExtractTarGz https://github.com/kubernetes-sigs/cri-tools/releases/download/$CrictlVersion/crictl-$CrictlVersion-windows-amd64.tar.gz $Global:BaseDir\$DestinationPath
+        DownloadFile https://github.com/kubernetes-sigs/cri-tools/releases/download/$CrictlVersion/crictl-$CrictlVersion-windows-amd64.tar.gz -Destination $Global:BaseDir\$DestinationPath\crictl.tar.gz
+        & cmd /c tar -zxvf $Global:BaseDir\$DestinationPath\crictl.tar.gz -C $DestinationPath '2>&1'
         #TODO - containerd - move to generating template with containerd.exe config default instead of downloading it.
         #TODO - containerd - also align with runtimeHandlers used in test passes
         DownloadFile "https://github.com/nagiesek/cri/releases/download/windows/config.toml"  -Destination "$Global:BaseDir\$DestinationPath\config.toml"
