@@ -1410,8 +1410,9 @@ function UninstallContainerD()
 
 function InstallContainerdImages()
 {
-    # TODO
-    Write-Warning "Warning - Image pre-pulling is not implemented yet"
+    # TODO improve this
+    ctr.exe -n k8s.io image pull $Global:NanoserverImage
+    # ctr.exe -n k8s.io image pull $Global:ServercoreImage
     # if (!(docker images $Global:NanoserverImage -q))
     # {
     #     docker pull $Global:NanoserverImage
