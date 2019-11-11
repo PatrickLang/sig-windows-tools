@@ -1287,11 +1287,11 @@ function InstallPauseImage()
         }
 
         "containerd" {
-            # TODO
-            throw "Not implemented yet"
+            ctr.exe -n k8s.io image pull $Global:PauseImage
+            break
         }
 
-        default { throw "$_ not supported"}
+        default { throw "Container runtime $_ not supported"}
     }
 }
 
