@@ -1392,9 +1392,14 @@ debug: false
     $service = Get-Service $serviceName -ErrorAction SilentlyContinue
     if (!$service)
     {
-        New-Service -name ContainerD -binaryPathName "$containerdBinpath $containerdArgs" `
+        $service = New-Service -name ContainerD -binaryPathName "$containerdBinpath $containerdArgs" `
             -displayName $serviceName -startupType Automatic    `
             -Description "$serviceName Service"
+    }
+
+    if ($service.Status -ne "Running")
+    {
+        $service | Start-Service
     }
 }
 
