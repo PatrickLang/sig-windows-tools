@@ -302,10 +302,8 @@ function DownloadCniBinaries($NetworkMode, $CniPath)
     DownloadFlannelBinaries -Destination $Global:BaseDir
     if ($Global:Cri -eq "containerd")
     {
-        # TODO: Add URL parameters for both runtimes
         DownloadFile  $Global:ClusterConfiguration.Cni.DownloadUrls.WindowsContainerNetworking -Destination "$env:TEMP\windows-container-networking-cni-amd64.zip"
         Expand-Archive -Path "$env:TEMP\windows-container-networking-cni-amd64.zip" -DestinationPath $CniPath -Force
-        throw "Not implemented yet"
     } else {
         DownloadFile -Url $Global:ClusterConfiguration.Cni.DownloadUrls.ContainerNetworkingPlugins -Destination $Global:BaseDir/cni-plugins-windows-amd64.tgz
         & cmd /c tar -zxvf $Global:BaseDir/cni-plugins-windows-amd64.tgz -C $CniPath '2>&1'
