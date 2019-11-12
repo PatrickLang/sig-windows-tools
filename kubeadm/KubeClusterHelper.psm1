@@ -538,12 +538,22 @@ function Update-CNIConfig
     switch ($Global:Cri)
     {
         "dockerd" {
-            Update-CNIConfigDocker $PSBoundParameters
+            Update-CNIConfigDocker -clusterCIDR $clusterCIDR `
+                                   -KubeDnsServiceIP $KubeDnsServiceIP `
+                                   -serviceCIDR $serviceCIDR `
+                                   -InterfaceName $InterfaceName `
+                                   -NetworkName $NetworkName `
+                                   -NetworkMode $NetworkMode
             break
         }
 
         "containerd" {
-            Update-CNIConfigContainerd $PSBoundParameters
+            Update-CNIConfigContainerd -clusterCIDR $clusterCIDR `
+                                   -KubeDnsServiceIP $KubeDnsServiceIP `
+                                   -serviceCIDR $serviceCIDR `
+                                   -InterfaceName $InterfaceName `
+                                   -NetworkName $NetworkName `
+                                   -NetworkMode $NetworkMode
             break
         }
 
