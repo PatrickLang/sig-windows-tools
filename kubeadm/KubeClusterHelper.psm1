@@ -802,30 +802,30 @@ function GetKubeletArguments()
 
     # TODO: containerd - windows 1903+ - parameterize pod-infra-container-image and default to premade image on MCR
     $kubeletArgs = @(
-        (get-command kubelet.exe -ErrorAction Stop).Source,
-        "--windows-service"
-        "--hostname-override=$(hostname)"
-        '--v=6'
-        "--pod-infra-container-image=$Global:PauseImage"
-        #'--resolv-conf=\"\"',
+        "--windows-service",
+        "--hostname-override=$(hostname)",
+        '--v=6',
+        "--pod-infra-container-image=$Global:PauseImage",
+        '--resolv-conf=\"\"',
         #'--allow-privileged=true',
         #'--enable-debugging-handlers', # Comment for Config
         "--cluster-dns=`"$KubeDnsServiceIp`"",
         '--cluster-domain=cluster.local', 
         #'--hairpin-mode=promiscuous-bridge', # Comment for Config
-        '--image-pull-progress-deadline=20m'
-        '--cgroups-per-qos=false'
-        "--log-dir=$LogDir"
-        '--logtostderr=false'
-        "--enforce-node-allocatable=`"`""
-        '--network-plugin=cni'
-        "--cni-bin-dir=$CniDir"
-        "--cni-conf-dir=$CniConf"
-        "--node-ip=$NodeIp"
-        "--cert-dir=$env:SYSTEMDRIVE\var\lib\kubelet\pki"
-        "--config=$env:SYSTEMDRIVE\var\lib\kubelet\config.yaml"
-        "--kubeconfig=$env:SYSTEMDRIVE\etc\kubernetes\kubelet.conf"
-        "--bootstrap-kubeconfig=$env:SYSTEMDRIVE\etc\kubernetes\bootstrap-kubelet.conf"
+        '--image-pull-progress-deadline=20m',
+        '--cgroups-per-qos=false',
+        "--log-dir=$LogDir",
+        '--logtostderr=false',
+        "--enforce-node-allocatable=`"`"",
+        '--network-plugin=cni',
+        "--cni-bin-dir=$CniDir",
+        "--cni-conf-dir=$CniConf",
+        "--node-ip=$NodeIp",
+        "--cert-dir=$env:SYSTEMDRIVE\var\lib\kubelet\pki",
+        "--config=$env:SYSTEMDRIVE\var\lib\kubelet\config.yaml",
+        "--kubeconfig=$env:SYSTEMDRIVE\etc\kubernetes\kubelet.conf",
+        "--bootstrap-kubeconfig=$env:SYSTEMDRIVE\etc\kubernetes\bootstrap-kubelet.conf",
+        "--feature-gates=$KubeletFeatureGates"
     )
 
     if ($KubeletFeatureGates -ne "")
@@ -937,10 +937,8 @@ function InstallKubelet()
 
     New-Service -Name "kubelet" -StartupType Automatic `
         -DependsOn $depends `
-        -BinaryPathName "$kubeletBinPath --windows-service --v=6 --log-dir=$logDir --cert-dir=$env:SYSTEMDRIVE\var\lib\kubelet\pki --cni-bin-dir=$CniDir --cni-conf-dir=$CniConf --bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf --kubeconfig=/etc/kubernetes/kubelet.conf --hostname-override=$(hostname) --pod-infra-container-image=$Global:PauseImage --enable-debugging-handlers  --cgroups-per-qos=false --enforce-node-allocatable=`"`" --logtostderr=false --network-plugin=cni --resolv-conf=`"`" --cluster-dns=`"$KubeDnsServiceIp`" --cluster-domain=cluster.local --feature-gates=$KubeletFeatureGates"
-
-    # Investigate why the below doesn't work, probably a syntax error with the args
-    #New-Service -Name "kubelet" -StartupType Automatic -BinaryPathName "$kubeletArgs"
+        -BinaryPathName "$kubeletBinPath $kubeletArgs"
+        
     & cmd /c kubeadm join "$(GetAPIServerEndpoint)" --token "$Global:Token" --discovery-token-ca-cert-hash "$Global:CAHash" '2>&1'
     if (!$?) { Write-Warning "Error joining cluster, exiting."; exit; }
 
