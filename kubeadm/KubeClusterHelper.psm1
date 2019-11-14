@@ -824,8 +824,7 @@ function GetKubeletArguments()
         "--cert-dir=$env:SYSTEMDRIVE\var\lib\kubelet\pki",
         "--config=$env:SYSTEMDRIVE\var\lib\kubelet\config.yaml",
         "--kubeconfig=$env:SYSTEMDRIVE\etc\kubernetes\kubelet.conf",
-        "--bootstrap-kubeconfig=$env:SYSTEMDRIVE\etc\kubernetes\bootstrap-kubelet.conf",
-        "--feature-gates=$KubeletFeatureGates"
+        "--bootstrap-kubeconfig=$env:SYSTEMDRIVE\etc\kubernetes\bootstrap-kubelet.conf"
     )
 
     if ($KubeletFeatureGates -ne "")
@@ -837,6 +836,8 @@ function GetKubeletArguments()
     {
         $kubeletArgs += @("--container-runtime=remote", "--container-runtime-endpoint=npipe:////./pipe/containerd-containerd")
     }
+
+    # TODO: Current issue F1113 18:33:26.357852    4208 server.go:251] unable to load client CA file C:\var\lib\kubelet\etc\kubernetes\pki\ca.crt: open C:\var\lib\kubelet\etc\kubernetes\pki\ca.crt: The system cannot find the path specified.
 
     return $kubeletArgs
 }
